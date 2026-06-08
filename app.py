@@ -1,371 +1,394 @@
 import streamlit as st
 import pandas as pd
+import requests
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# ── Page config ──────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="🎬 CineMatch",
-    page_icon="🎬",
-    layout="centered",
-)
+# ─────────────────────────────────────────────
+#  CONFIG
+# ─────────────────────────────────────────────
+TMDB_API_KEY = "8265bd1679663a7ea12ac168da84d2e8"   # public demo key – replace with your own
+TMDB_BASE    = "https://api.themoviedb.org/3"
+POSTER_BASE  = "https://image.tmdb.org/t/p/w500"
+AVATAR_BASE  = "https://image.tmdb.org/t/p/w185"
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
+st.set_page_config(page_title="CineMatch", page_icon="🎬", layout="wide")
+
+# ─────────────────────────────────────────────
+#  CSS
+# ─────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500&display=swap');
 
-/* ── Global ── */
 html, body, [class*="css"] {
-    background-color: #07070f !important;
+    background-color: #080810 !important;
     color: #e0e0e0 !important;
-    font-family: 'Inter', sans-serif !important;
+    font-family: 'DM Sans', sans-serif !important;
 }
-.stApp { background-color: #07070f !important; }
-
-/* ── Hide Streamlit chrome ── */
+.stApp { background-color: #080810 !important; }
 #MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 2.5rem 1.5rem 4rem !important; max-width: 720px !important; }
+.block-container { padding: 2.5rem 2rem 4rem !important; max-width: 1200px !important; }
 
-/* ── Ambient blobs ── */
+/* Ambient blobs */
 .stApp::before {
-    content: '';
-    position: fixed; top: -150px; right: -150px;
-    width: 500px; height: 500px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(224,123,84,.08) 0%, transparent 70%);
-    pointer-events: none; z-index: 0;
+    content:'';
+    position:fixed; top:-200px; right:-200px;
+    width:600px; height:600px; border-radius:50%;
+    background:radial-gradient(circle,rgba(224,123,84,.07) 0%,transparent 70%);
+    pointer-events:none; z-index:0;
+}
+.stApp::after {
+    content:'';
+    position:fixed; bottom:-200px; left:-150px;
+    width:500px; height:500px; border-radius:50%;
+    background:radial-gradient(circle,rgba(142,68,173,.06) 0%,transparent 70%);
+    pointer-events:none; z-index:0;
 }
 
 /* ── Header ── */
-.header-badge {
-    display: inline-block;
-    background: rgba(224,123,84,.12);
-    border: 1px solid rgba(224,123,84,.3);
-    color: #e07b54;
-    font-size: 10px;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    padding: 4px 12px;
-    border-radius: 20px;
-    margin-bottom: 10px;
-    font-family: 'Courier New', monospace;
+.badge {
+    display:inline-block;
+    background:rgba(224,123,84,.1);
+    border:1px solid rgba(224,123,84,.3);
+    color:#e07b54; font-size:10px; letter-spacing:3px;
+    text-transform:uppercase; padding:4px 14px;
+    border-radius:20px; margin-bottom:12px;
+    font-family:'Courier New',monospace;
 }
 .main-title {
-    font-family: 'Playfair Display', serif !important;
-    font-size: clamp(32px, 6vw, 48px) !important;
-    font-weight: 700 !important;
-    line-height: 1.15 !important;
-    color: #ffffff !important;
-    margin: 0 0 6px 0 !important;
+    font-family:'Playfair Display',serif !important;
+    font-size:clamp(28px,5vw,46px) !important;
+    font-weight:700 !important; line-height:1.15 !important;
+    color:#fff !important; margin:0 0 6px 0 !important;
 }
-.gradient-word {
-    background: linear-gradient(90deg, #e07b54, #f5c518);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-.subtitle {
-    color: #555 !important;
-    font-size: 14px !important;
-    margin-bottom: 32px !important;
-}
+.grad { background:linear-gradient(90deg,#e07b54,#f5c518);
+        -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.subtitle { color:#555 !important; font-size:14px !important; margin-bottom:28px !important; }
 
-/* ── Select box ── */
+/* ── Selectbox ── */
 .stSelectbox label {
-    color: #666 !important;
-    font-size: 11px !important;
-    letter-spacing: 2px !important;
-    text-transform: uppercase !important;
-    font-family: 'Courier New', monospace !important;
+    color:#666 !important; font-size:10px !important;
+    letter-spacing:2px !important; text-transform:uppercase !important;
+    font-family:'Courier New',monospace !important;
 }
 .stSelectbox > div > div {
-    background: #0d0d1a !important;
-    border: 1px solid #1e1e2e !important;
-    border-radius: 10px !important;
-    color: #e0e0e0 !important;
-    padding: 4px 4px !important;
-    transition: border-color .2s !important;
-}
-.stSelectbox > div > div:hover {
-    border-color: rgba(224,123,84,.5) !important;
+    background:#0d0d1a !important; border:1px solid #1e1e2e !important;
+    border-radius:10px !important; color:#e0e0e0 !important;
 }
 .stSelectbox > div > div:focus-within {
-    border-color: #e07b54 !important;
-    box-shadow: 0 0 0 3px rgba(224,123,84,.1) !important;
+    border-color:#e07b54 !important;
+    box-shadow:0 0 0 3px rgba(224,123,84,.1) !important;
 }
 
 /* ── Button ── */
 .stButton > button {
-    width: 100% !important;
-    background: linear-gradient(135deg, #e07b54, #c0392b) !important;
-    color: #fff !important;
-    border: none !important;
-    border-radius: 10px !important;
-    padding: 14px 0 !important;
-    font-size: 15px !important;
-    font-weight: 600 !important;
-    letter-spacing: 1px !important;
-    margin-top: 8px !important;
-    box-shadow: 0 4px 20px rgba(224,123,84,.3) !important;
-    transition: transform .2s, box-shadow .2s !important;
+    width:100% !important;
+    background:linear-gradient(135deg,#e07b54,#c0392b) !important;
+    color:#fff !important; border:none !important;
+    border-radius:10px !important; padding:14px 0 !important;
+    font-size:15px !important; font-weight:600 !important;
+    letter-spacing:1px !important;
+    box-shadow:0 4px 20px rgba(224,123,84,.3) !important;
+    transition:all .2s !important;
 }
 .stButton > button:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 8px 30px rgba(224,123,84,.45) !important;
-    background: linear-gradient(135deg, #e8855e, #cc2f2f) !important;
-}
-.stButton > button:active { transform: translateY(0) !important; }
-
-/* ── Divider ── */
-.section-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 32px 0 18px 0;
-}
-.section-title {
-    font-family: 'Playfair Display', serif;
-    font-size: 20px;
-    color: #fff;
-    white-space: nowrap;
-}
-.section-line {
-    height: 1px;
-    flex: 1;
-    background: linear-gradient(90deg, rgba(224,123,84,.4), transparent);
-}
-.section-count {
-    color: #e07b54;
-    font-size: 11px;
-    font-family: 'Courier New', monospace;
-    white-space: nowrap;
+    transform:translateY(-2px) !important;
+    box-shadow:0 8px 30px rgba(224,123,84,.45) !important;
 }
 
-/* ── Movie card ── */
-.movie-card {
-    background: linear-gradient(135deg, #12121e, #0d0d1a);
-    border: 1px solid #1a1a2a;
-    border-left: 3px solid #e07b54;
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: all .25s ease;
-    cursor: default;
-    animation: slideIn .4s ease forwards;
-    opacity: 0;
+/* ── Selected movie hero card ── */
+.hero-card {
+    display:flex; gap:22px; align-items:flex-start;
+    background:linear-gradient(135deg,#12121e,#0d0d1a);
+    border:1px solid #1e1e2e; border-left:4px solid #e07b54;
+    border-radius:14px; padding:20px; margin-bottom:30px;
 }
-.movie-card:hover {
-    border-color: rgba(224,123,84,.5) !important;
-    border-left-color: #e07b54 !important;
-    background: linear-gradient(135deg, #1a1a2e, #141428) !important;
-    transform: translateX(5px);
-    box-shadow: 0 6px 24px rgba(224,123,84,.12);
+.hero-card img { border-radius:10px; width:120px; min-width:120px; object-fit:cover; }
+.hero-info h2 {
+    font-family:'Playfair Display',serif;
+    font-size:22px; color:#fff; margin:0 0 6px 0;
 }
-
-/* Delay each card */
-.movie-card:nth-child(1)  { animation-delay: .05s; }
-.movie-card:nth-child(2)  { animation-delay: .10s; }
-.movie-card:nth-child(3)  { animation-delay: .15s; }
-.movie-card:nth-child(4)  { animation-delay: .20s; }
-.movie-card:nth-child(5)  { animation-delay: .25s; }
-.movie-card:nth-child(6)  { animation-delay: .30s; }
-.movie-card:nth-child(7)  { animation-delay: .35s; }
-.movie-card:nth-child(8)  { animation-delay: .40s; }
-.movie-card:nth-child(9)  { animation-delay: .45s; }
-.movie-card:nth-child(10) { animation-delay: .50s; }
-
-@keyframes slideIn {
-    from { opacity: 0; transform: translateX(-18px); }
-    to   { opacity: 1; transform: translateX(0); }
+.hero-info p { color:#888; font-size:13px; line-height:1.6; margin:0 0 10px 0; }
+.hero-meta { display:flex; gap:8px; flex-wrap:wrap; }
+.pill {
+    background:rgba(224,123,84,.1); border:1px solid rgba(224,123,84,.25);
+    color:#e07b54; font-size:10px; padding:3px 10px;
+    border-radius:20px; font-family:'Courier New',monospace;
+    text-transform:uppercase; letter-spacing:.5px;
+}
+.pill-yellow {
+    background:rgba(245,197,24,.08); border:1px solid rgba(245,197,24,.2);
+    color:#f5c518;
 }
 
-.card-left { flex: 1; }
-.card-rank {
-    font-family: 'Courier New', monospace;
-    font-size: 11px;
-    color: #e07b54;
-    letter-spacing: 1px;
-    margin-bottom: 4px;
+/* ── Section header ── */
+.sec-head {
+    display:flex; align-items:center; gap:12px; margin:0 0 18px 0;
 }
-.card-title {
-    font-family: 'Playfair Display', serif;
-    font-size: 16px;
-    font-weight: 600;
-    color: #f0f0f0;
-    margin-bottom: 6px;
+.sec-title { font-family:'Playfair Display',serif; font-size:20px; color:#fff; white-space:nowrap; }
+.sec-line { height:1px; flex:1; background:linear-gradient(90deg,rgba(224,123,84,.4),transparent); }
+.sec-count { color:#e07b54; font-size:11px; font-family:'Courier New',monospace; white-space:nowrap; }
+
+/* ── Rec card ── */
+.rec-card {
+    background:linear-gradient(135deg,#12121e,#0d0d1a);
+    border:1px solid #1a1a2a; border-radius:14px;
+    overflow:hidden; transition:all .25s ease;
+    animation: fadeUp .45s ease forwards; opacity:0;
 }
-.card-meta {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
+.rec-card:hover {
+    border-color:rgba(224,123,84,.45) !important;
+    transform:translateY(-4px);
+    box-shadow:0 12px 36px rgba(224,123,84,.12);
 }
-.tag {
-    background: rgba(224,123,84,.12);
-    border: 1px solid rgba(224,123,84,.25);
-    color: #e07b54;
-    font-size: 10px;
-    padding: 2px 9px;
-    border-radius: 20px;
-    font-family: 'Courier New', monospace;
-    letter-spacing: .5px;
-    text-transform: uppercase;
+@keyframes fadeUp {
+    from { opacity:0; transform:translateY(16px); }
+    to   { opacity:1; transform:translateY(0); }
 }
-.similarity-badge {
-    background: rgba(245,197,24,.08);
-    border: 1px solid rgba(245,197,24,.2);
-    color: #f5c518;
-    font-size: 10px;
-    padding: 2px 9px;
-    border-radius: 20px;
-    font-family: 'Courier New', monospace;
+.rec-poster { width:100%; aspect-ratio:2/3; object-fit:cover; display:block; }
+.rec-poster-ph {
+    width:100%; aspect-ratio:2/3;
+    background:linear-gradient(135deg,#1a1a2e,#0d0d1a);
+    display:flex; align-items:center; justify-content:center;
+    font-size:36px; color:#2a2a3a;
+}
+.rec-body { padding:14px; }
+.rec-rank {
+    font-family:'Courier New',monospace; font-size:10px;
+    color:#e07b54; letter-spacing:1px; margin-bottom:4px;
+}
+.rec-title {
+    font-family:'Playfair Display',serif; font-size:15px;
+    font-weight:600; color:#f0f0f0; margin-bottom:8px;
+    line-height:1.3;
+}
+.rec-meta { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.rec-cast { font-size:11px; color:#666; line-height:1.5; }
+.rec-cast span { color:#999; }
+
+/* ── Cast row ── */
+.cast-row { display:flex; gap:8px; margin-top:10px; }
+.cast-chip {
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    min-width:52px; max-width:60px;
+}
+.cast-chip img {
+    width:44px; height:44px; border-radius:50%; object-fit:cover;
+    border:2px solid #2a2a3a;
+}
+.cast-chip .cast-ph {
+    width:44px; height:44px; border-radius:50%;
+    background:#1a1a2e; display:flex; align-items:center;
+    justify-content:center; font-size:16px; border:2px solid #2a2a3a;
+}
+.cast-chip span {
+    font-size:9px; color:#666; text-align:center; line-height:1.2;
+    word-break:break-word;
 }
 
-.card-score {
-    margin-left: 18px;
-    text-align: center;
-    min-width: 52px;
-}
-.score-circle {
-    width: 50px; height: 50px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    position: relative;
-    font-size: 11px; font-weight: 700;
-    color: #e07b54;
-    font-family: 'Courier New', monospace;
-}
-.score-label {
-    font-size: 9px;
-    color: #444;
-    letter-spacing: 1px;
-    margin-top: 3px;
-    font-family: 'Courier New', monospace;
-}
+/* ── Spinner ── */
+.stSpinner > div { border-top-color:#e07b54 !important; }
 
 /* ── Footer ── */
-.footer-text {
-    text-align: center;
-    color: #2a2a3a;
-    font-size: 10px;
-    letter-spacing: 2px;
-    font-family: 'Courier New', monospace;
-    margin-top: 32px;
-    text-transform: uppercase;
+.foot {
+    text-align:center; color:#222; font-size:10px;
+    letter-spacing:2px; font-family:'Courier New',monospace;
+    margin-top:40px; text-transform:uppercase;
 }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Data loading ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+#  TMDB HELPERS
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def tmdb_search(title: str):
+    try:
+        r = requests.get(
+            f"{TMDB_BASE}/search/movie",
+            params={"api_key": TMDB_API_KEY, "query": title, "language": "en-US"},
+            timeout=5
+        )
+        results = r.json().get("results", [])
+        return results[0] if results else None
+    except Exception:
+        return None
+
+@st.cache_data(show_spinner=False)
+def tmdb_credits(tmdb_id: int):
+    try:
+        r = requests.get(
+            f"{TMDB_BASE}/movie/{tmdb_id}/credits",
+            params={"api_key": TMDB_API_KEY},
+            timeout=5
+        )
+        cast = r.json().get("cast", [])[:5]
+        return cast
+    except Exception:
+        return []
+
+def poster_url(path):
+    return f"{POSTER_BASE}{path}" if path else None
+
+def avatar_url(path):
+    return f"{AVATAR_BASE}{path}" if path else None
+
+
+# ─────────────────────────────────────────────
+#  DATA
+# ─────────────────────────────────────────────
 @st.cache_data
 def load_data():
     df = pd.read_csv("movie_dataset.csv")
     df['overview'] = df['overview'].fillna('')
-
-    # Combine overview + genres for richer similarity
     features = df['overview']
     if 'genres' in df.columns:
         df['genres'] = df['genres'].fillna('')
         features = df['overview'] + ' ' + df['genres']
-
-    tfidf = TfidfVectorizer(stop_words='english', max_features=10000)
-    tfidf_matrix = tfidf.fit_transform(features)
-    cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
-
-    return df, cosine_sim
+    tfidf   = TfidfVectorizer(stop_words='english', max_features=10000)
+    mat     = tfidf.fit_transform(features)
+    cos_sim = cosine_similarity(mat, mat)
+    return df, cos_sim
 
 df, cosine_sim = load_data()
 
 
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown('<div class="header-badge">🎬 &nbsp;AI-POWERED</div>', unsafe_allow_html=True)
+# ─────────────────────────────────────────────
+#  HEADER
+# ─────────────────────────────────────────────
+st.markdown('<div class="badge">🎬 &nbsp;AI-POWERED</div>', unsafe_allow_html=True)
 st.markdown(
-    '<h1 class="main-title">Movie<br>'
-    '<span class="gradient-word">Recommendation</span><br>System</h1>',
+    '<h1 class="main-title">Movie <span class="grad">Recommendation</span> System</h1>',
     unsafe_allow_html=True
 )
-st.markdown('<p class="subtitle">Apni pasandida film chunein — baaki hum karein</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Select a movie and discover films you\'ll love — powered by ML</p>',
+            unsafe_allow_html=True)
+
+col_sel, col_btn = st.columns([3, 1])
+with col_sel:
+    movie_name = st.selectbox("SELECT A MOVIE", df['title'].values, label_visibility="visible")
+with col_btn:
+    st.markdown("<br>", unsafe_allow_html=True)
+    recommend_clicked = st.button("🎯  Find Movies")
 
 
-# ── Selector ──────────────────────────────────────────────────────────────────
-movie_name = st.selectbox("FILM CHUNEIN", df['title'].values)
+# ─────────────────────────────────────────────
+#  SELECTED MOVIE HERO
+# ─────────────────────────────────────────────
+if movie_name:
+    with st.spinner("Loading movie info..."):
+        info = tmdb_search(movie_name)
 
-recommend_clicked = st.button("🎯  RECOMMEND KARO")
+    if info:
+        tmdb_id   = info.get("id")
+        poster    = poster_url(info.get("poster_path"))
+        overview  = info.get("overview", df[df['title']==movie_name]['overview'].values[0])
+        rating    = info.get("vote_average", 0)
+        release   = info.get("release_date", "")[:4]
+        genres_raw = df[df['title']==movie_name]['genres'].values[0] if 'genres' in df.columns else ""
 
-
-# ── Recommendations ───────────────────────────────────────────────────────────
-if recommend_clicked:
-    idx = df[df['title'] == movie_name].index[0]
-    distances = cosine_sim[idx]
-
-    movies_list = sorted(
-        list(enumerate(distances)),
-        reverse=True,
-        key=lambda x: x[1]
-    )[1:11]
-
-    # Section header
-    st.markdown(f"""
-    <div class="section-header">
-        <span class="section-title">Recommended Films</span>
-        <div class="section-line"></div>
-        <span class="section-count">{len(movies_list)} results</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Cards
-    for rank, (movie_idx, score) in enumerate(movies_list, 1):
-        row = df.iloc[movie_idx]
-        title = row['title']
-        pct = round(score * 100)
-
-        # Optional columns
-        genre = ""
-        if 'genres' in df.columns and row.get('genres', ''):
-            raw = str(row['genres'])
-            genre = raw.split()[0] if raw else ""
-
-        year = ""
-        for col in ['release_date', 'year', 'release_year']:
-            if col in df.columns:
-                val = str(row.get(col, ''))
-                if len(val) >= 4:
-                    year = val[:4]
-                    break
-
-        tag_html = f'<span class="tag">{genre}</span>' if genre else ""
-        score_style = (
-            f"background: conic-gradient(#e07b54 {pct*3.6}deg, #1a1a2e 0deg);"
-        )
+        poster_html = f'<img src="{poster}" alt="poster">' if poster else '<div style="width:120px;height:180px;background:#1a1a2e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>'
 
         st.markdown(f"""
-        <div class="movie-card">
-            <div class="card-left">
-                <div class="card-rank">#{rank:02d} &nbsp;·&nbsp; {year}</div>
-                <div class="card-title">{title}</div>
-                <div class="card-meta">
-                    {tag_html}
-                    <span class="similarity-badge">⚡ {pct}% match</span>
+        <div class="hero-card">
+            {poster_html}
+            <div class="hero-info">
+                <h2>{movie_name}</h2>
+                <p>{overview[:200]}{'...' if len(overview)>200 else ''}</p>
+                <div class="hero-meta">
+                    <span class="pill">{release}</span>
+                    <span class="pill pill-yellow">⭐ {rating:.1f}/10</span>
+                    {''.join(f'<span class="pill">{g.strip()}</span>' for g in genres_raw.split() if g.strip())[:3]}
                 </div>
-            </div>
-            <div class="card-score">
-                <div class="score-circle" style="{score_style}">
-                    <div style="width:38px;height:38px;border-radius:50%;
-                                background:#0d0d1a;display:flex;
-                                align-items:center;justify-content:center;">
-                        {pct}%
-                    </div>
-                </div>
-                <div class="score-label">MATCH</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
+
+# ─────────────────────────────────────────────
+#  RECOMMENDATIONS
+# ─────────────────────────────────────────────
+if recommend_clicked:
+    idx = df[df['title'] == movie_name].index[0]
+    movies_list = sorted(
+        list(enumerate(cosine_sim[idx])),
+        reverse=True, key=lambda x: x[1]
+    )[1:11]
+
+    st.markdown(f"""
+    <div class="sec-head">
+        <span class="sec-title">Recommended Films</span>
+        <div class="sec-line"></div>
+        <span class="sec-count">{len(movies_list)} results</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 5-column grid
+    cols = st.columns(5)
+
+    for rank, (midx, score) in enumerate(movies_list):
+        row   = df.iloc[midx]
+        title = row['title']
+        pct   = round(score * 100)
+        delay = rank * 0.06
+
+        with st.spinner(f"Fetching {title}...") if rank == 0 else st.empty():
+            tmdb   = tmdb_search(title)
+            cast   = tmdb_credits(tmdb["id"]) if tmdb else []
+
+        poster_path = tmdb.get("poster_path") if tmdb else None
+        release_yr  = (tmdb.get("release_date","")[:4]) if tmdb else ""
+        vote        = tmdb.get("vote_average", 0) if tmdb else 0
+
+        poster_html = (
+            f'<img class="rec-poster" src="{poster_url(poster_path)}" alt="{title}">'
+            if poster_path else
+            '<div class="rec-poster-ph">🎬</div>'
+        )
+
+        # Cast chips
+        cast_chips = ""
+        for actor in cast[:4]:
+            ap = avatar_url(actor.get("profile_path"))
+            name = actor.get("name","")
+            first = name.split()[0] if name else ""
+            img_html = (
+                f'<img src="{ap}" alt="{first}">'
+                if ap else
+                '<div class="cast-ph">👤</div>'
+            )
+            cast_chips += f'<div class="cast-chip">{img_html}<span>{first}</span></div>'
+
+        genre_tags = ""
+        if 'genres' in df.columns:
+            graw = str(row.get('genres',''))
+            genre_tags = ''.join(
+                f'<span class="pill" style="font-size:9px;padding:2px 7px;">{g.strip()}</span>'
+                for g in graw.split()[:2] if g.strip()
+            )
+
+        card_html = f"""
+        <div class="rec-card" style="animation-delay:{delay:.2f}s">
+            {poster_html}
+            <div class="rec-body">
+                <div class="rec-rank">#{rank+1:02d} &nbsp;·&nbsp; {release_yr}</div>
+                <div class="rec-title">{title}</div>
+                <div class="rec-meta">
+                    {genre_tags}
+                    <span class="pill pill-yellow" style="font-size:9px;padding:2px 7px;">⚡ {pct}%</span>
+                    {'<span class="pill" style="font-size:9px;padding:2px 7px;">⭐ '+ f"{vote:.1f}"+'</span>' if vote else ""}
+                </div>
+                {'<div class="rec-cast"><span>Cast:</span><div class="cast-row">' + cast_chips + '</div></div>' if cast_chips else ""}
+            </div>
+        </div>
+        """
+
+        with cols[rank % 5]:
+            st.markdown(card_html, unsafe_allow_html=True)
+
     st.markdown(
-        '<p class="footer-text">Content-Based Filtering &nbsp;·&nbsp; TF-IDF + Cosine Similarity</p>',
+        '<p class="foot">Content-Based Filtering &nbsp;·&nbsp; TF-IDF + Cosine Similarity &nbsp;·&nbsp; TMDB API</p>',
         unsafe_allow_html=True
     )
-
